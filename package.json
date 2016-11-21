@@ -1,0 +1,17 @@
+{
+  "name": "stm-programator-project",
+  "version": "1.0.0",
+  "description": "STM32/8 Programator project",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "onoff": "^1.1.1",
+    "q": "^1.4.1",
+    "shelljs": "^0.7.5",
+    "udev": "^0.3.0"
+  }
+}
