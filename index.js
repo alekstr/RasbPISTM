@@ -19,7 +19,7 @@ var deviceTrack = function(action, device) {
 	//console.log(action + ' device:', device);
 	if(device.ID_MODEL && device.ID_MODEL.match(/stlink/gi)) {
 		console.log('Seems STM');
-		console.log(device);
+	//	console.log(device);
 		if(action === 'add') {
 			deviceAdd(device);
 		}
@@ -28,21 +28,57 @@ var deviceTrack = function(action, device) {
 var globalUsbDev = [];
 //Setting button click event
 button.onClick(function(state){
-	for(var i=0; i<globalUsbDev.length; i++) {
-		//Toggling USB device
-		console.log('Toggling usb: ', globalUsbDev[i]);
-		exec('echo '+globalUsbDev[i]+' > /sys/bus/usb/drivers/usb/unbind && echo '+globalUsbDev[i]+' > /sys/bus/usb/drivers/usb/bind');
-	}
+	//Toggling USB device
+	console.log('Toggling usb');
+	exec('echo 1-1 > /sys/bus/usb/drivers/usb/unbind && echo 1-1 > /sys/bus/usb/drivers/usb/bind');
 });
+
+var isSTM32 = function() {
+	console.log('CHecking STM version');
+
+	return exec("openocd -f "+cdr+"/openocd/stm32_linked.cfg -c \"discovery_32 \"").code === 0 ? true : false;
+}
+
+var getBin = function(pattern, path) {
+	if(!path) {
+		path = '/media/usb0';
+	}
+
+	var files = fs.readdirSync(path);
+    for (var i in files) {
+		if(!files[i].match(pattern)) {
+			continue;
+		}
+
+        var name = dir + '/' + files[i];
+        
+		if (!fs.statSync(name).isDirectory()){
+            return name;
+        }
+    }
+	
+	return null;
+}
+var getFlashFile = function(version) {
+	var re = new RegExp(".*_"+version+".bin$","gi");
+	try {
+		return getBin(re);	
+	}catch(e) {
+		console.log('Cannot find firmware file');
+		console.log(e);
+
+		return null;	
+	}
+}
 
 var deviceAdd = function(device) {
 	console.log(device);
 	try {
 		var snr = fs.readFileSync(device.syspath + '/serial').toString();
-		var usbDev = path.basename(path.dirname(device.syspath));
-		if(globalUsbDev.indexOf(usbDev) === -1) {
-			globalUsbDev.push(usbDev);
-		}	
+		//var usbDev = path.basename(path.dirname(device.syspath));
+		//if(globalUsbDev.indexOf(usbDev) === -1) {
+		//	globalUsbDev.push(usbDev);
+		//}	
 
 		var serialNumber = '';
 		for(var i=0; i<snr.length-1; i++) {
@@ -51,8 +87,21 @@ var deviceAdd = function(device) {
 
 		console.log('STLink serial: ', serialNumber)
 		
-		var flashFile = cdr+"/tmp/maple_mini_boot20.bin";
+		console.log('Checking STM32 device');
+
+		if(!isSTM32()) {
+			console.log('Seems STM8 - not yet supported');
+			return null;
+		}
 		
+		console.log('Getting firmware file');
+
+		var flashFile = getFlashFile('32');
+		
+		if(!flashFile) {
+			return null;
+		}	
+
 		led.set(1);
 
 		var ocd = exec("openocd -f "+cdr+"/openocd/stm32_linked.cfg -c \"flash_image "+flashFile+"\"");
