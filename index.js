@@ -20,6 +20,9 @@ var reset = function() {
 var error = function(msg) {
 	statusLed.set(0);
 	errorLed.set(1);
+	setTimeout(function(){
+		errorLed.set(0);
+	}, 10000);
 	console.log(msg);
 };
 
@@ -66,11 +69,26 @@ button.onClick(function(state){
 });
 
 var isSTM32 = function() {
-	console.log('CHecking STM version');
+	console.log('CHecking STM32 version');
 
 	return exec("openocd -f "+cdr+"/openocd/stm32_linked.cfg -c \"discovery_32 \"").code === 0 ? true : false;
-}
+};
+var isSTM8 = function() {
+	console.log('Checking STM8 version');
 
+	return exec("stm8flash -c stlinkv2 -p stm8s103f3 -s opt -r /tmp/test").code === 0 ? true : false;
+};
+var getSTMVersion = function() {
+	console.log('Checking STM version');
+
+	if(isSTM8()) {
+		return '8';
+	}else if(isSTM32()) {
+		return '32';
+	}else{
+		return null;	
+	}
+};
 var getBin = function(pattern, path) {
 	if(!path) {
 		path = '/media/usb0';
@@ -92,7 +110,7 @@ var getBin = function(pattern, path) {
 	return null;
 }
 var getFlashFile = function(version) {
-	var re = new RegExp(".*_"+version+".bin$","gi");
+	var re = new RegExp(".*_"+version+".(bin|ihx)$","gi");
 	try {
 		return getBin(re);	
 	}catch(e) {
@@ -102,6 +120,39 @@ var getFlashFile = function(version) {
 		return null;	
 	}
 }
+
+var flash = function(version, fw) {
+	if(!fs.existsSync(fw)) {
+		throw {
+			'message': 'File not found: '+fw,
+			'name': 'FileNotFound'
+		};	
+	}
+
+	var com = {};
+
+	if(version === '32') {
+		com = exec("openocd -f "+cdr+"/openocd/stm32_linked.cfg -c \"flash_image "+fw+"\"");
+	}else if(version === '8'){
+		com = exec("stm8flash -c stlinkv2 -p stm8s103?3 -w "+fw);
+	}else{
+		throw {
+			'message': 'Unsupported version of STM: '+version,
+			'name': 'UnsupportedSTMVersion'
+		};
+	}
+
+	if(com.code !== 0) {
+		console.log(com);
+		throw {
+			'message': 'Failed to flash STM',
+			'name': 'STMFlashFailed'
+		};
+	}else{
+		return true;
+	}
+	
+};
 
 var deviceAdd = function(device) {
 	console.log(device);
@@ -119,16 +170,17 @@ var deviceAdd = function(device) {
 
 		console.log('STLink serial: ', serialNumber)
 		
-		console.log('Checking STM32 device');
+		console.log('Checking device version');
+		var version = getSTMVersion();
 
-		if(!isSTM32()) {
-			error('Seems STM8 - not yet supported');
+		if(version === null) {
+			error('Cannot detect STM version');
 			return null;
 		}
 		
 		console.log('Getting firmware file');
 
-		var flashFile = getFlashFile('32');
+		var flashFile = getFlashFile(version);
 		
 		if(!flashFile) {
 			error('Firmware files not found (usb not attached??)');
@@ -137,12 +189,7 @@ var deviceAdd = function(device) {
 
 		statusLed.set(1);
 
-		var ocd = exec("openocd -f "+cdr+"/openocd/stm32_linked.cfg -c \"flash_image "+flashFile+"\"");
-
-		if(ocd.code !== 0) {
-			errorg('Failed to flash STM ');
-			console.log(ocd);
-		}else{
+		if(flash(version, flashFile)) {
 			success('Successfully wrote: ' + flashFile);
 		}
 	    	
@@ -159,6 +206,17 @@ monitor.on('add', function (device) {
    	deviceTrack('add', device); 
 	//monitor.close() // this closes the monitor.
 });
+process.on('SIGTERM', function () {
+	console.log('Got SIGTERM');
+	reset();
+  	process.exit(0);
+});
+
+process.on('SIGINT', function() {
+	reset();
+	process.exit();
+});
+
 //monitor.on('remove', function (device) {
 //    deviceTrack('remove ', device);
 //});
